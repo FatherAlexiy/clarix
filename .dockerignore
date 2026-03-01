@@ -1,0 +1,17 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.git
+.gitignore
+.idea/
+staticfiles/
+db.sqlite3
+*.egg-info
+frontend/
+prototype/
+*.log
+.dockerignore
+README.md
