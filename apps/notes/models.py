@@ -32,11 +32,18 @@ class Note(models.Model):
     embedding = VectorField(dimensions=384, null=True, blank=True)
     is_public = models.BooleanField(default=False)
     public_token = models.UUIDField(default=uuid.uuid4, unique=True, null=True, blank=True)
+    is_archived = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['public_token']),
+            models.Index(fields=['user', 'is_archived']),
+        ]
 
     def __str__(self):
         return self.title

@@ -1,13 +1,18 @@
 import { api } from '../api.js';
 import { router } from '../router.js';
-import { renderShell, initShell } from '../components/shell.js';
+import { renderShell, initShell, updateEmotionTagTree } from '../components/shell.js';
 import { renderLoader } from '../components/loader.js';
 import { toast } from '../components/toast.js';
 import { icon } from '../components/icons.js';
 import { escapeHtml, escapeAttr } from '../utils.js';
 
+let _fromArchive = false;
+
 export function renderNoteEditPage({ id }) {
+  _fromArchive = sessionStorage.getItem('clarix_note_origin') === 'archive';
+
   document.getElementById('app').innerHTML = renderShell({
+    isArchive: _fromArchive,
     mainHTML: `<div id="edit-container" class="page-inner">${renderLoader()}</div>`
   });
 
@@ -19,6 +24,7 @@ async function _loadAndRender(id) {
   const container = document.getElementById('edit-container');
   try {
     const note = await api.getNote(id);
+    updateEmotionTagTree([note], null, () => {});
     _renderForm(note);
   } catch (err) {
     container.innerHTML = err.status === 404
@@ -37,9 +43,9 @@ function _renderForm(note) {
   const container = document.getElementById('edit-container');
   container.innerHTML = `
     <div class="note-form-header">
-      <a href="/notes/${escapeAttr(note.id)}" class="btn btn-ghost btn-sm">
+      <button class="btn btn-ghost btn-sm" id="back-btn">
         ${icon('back')} Назад
-      </a>
+      </button>
       <h2>Редактирование</h2>
     </div>
 
@@ -74,10 +80,13 @@ function _renderForm(note) {
         <button type="submit" class="btn btn-primary" id="submit-btn">
           ${icon('check')} Сохранить
         </button>
-        <a href="/notes/${escapeAttr(note.id)}" class="btn btn-secondary">Отмена</a>
+        <button type="button" class="btn btn-secondary" id="cancel-btn">Отмена</button>
       </div>
     </form>
   `;
+
+  document.getElementById('back-btn')?.addEventListener('click', () => history.back());
+  document.getElementById('cancel-btn')?.addEventListener('click', () => history.back());
 
   const form      = document.getElementById('note-form');
   const errorEl   = document.getElementById('form-error');

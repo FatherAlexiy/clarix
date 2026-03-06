@@ -27,3 +27,8 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/

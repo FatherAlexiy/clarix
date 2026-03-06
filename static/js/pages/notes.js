@@ -1,27 +1,33 @@
 import { api } from '../api.js';
 import { router } from '../router.js';
-import { renderShell, initShell, updateSidebarTags, initEmotionFilter } from '../components/shell.js';
+import { wsGlobal } from '../ws-global.js';
+import { renderShell, initShell, updateEmotionTagTree } from '../components/shell.js';
 import { renderNoteCard } from '../components/note-card.js';
 import { renderLoader } from '../components/loader.js';
 import { icon } from '../components/icons.js';
+import { toast } from '../components/toast.js';
 import { debounce, escapeHtml, initTagGlow } from '../utils.js';
 
 // ─── Page state ───────────────────────────────────────────────────────────────
 
-let _allNotes      = [];
-let _activeTag     = null;
-let _activeEmotion = null;
-let _search        = '';
-let _totalCount    = 0;
-let _loading       = false;
+let _allNotes    = [];
+let _activeTag   = null;
+let _search      = '';
+let _totalCount  = 0;
+let _loading     = false;
+let _pollInterval = null;
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export function renderNotesPage() {
-  _allNotes      = [];
-  _activeTag     = null;
-  _activeEmotion = null;
-  _search        = '';
+  sessionStorage.removeItem('clarix_note_origin');
+  _stopPolling();
+  _allNotes  = [];
+  _activeTag = null;
+  _search    = '';
+
+  wsGlobal.offAnyUpdate(_handleWSUpdate);
+  wsGlobal.onAnyUpdate(_handleWSUpdate);
 
   document.getElementById('app').innerHTML = renderShell({
     mainHTML: `
@@ -44,7 +50,6 @@ function _initSearch() {
   const input = document.getElementById('header-search');
   if (!input) return;
 
-  // Restore pending search from other pages
   const pending = sessionStorage.getItem('clarix_search');
   if (pending) { input.value = pending; _search = pending; sessionStorage.removeItem('clarix_search'); }
 
@@ -55,7 +60,6 @@ function _initSearch() {
   }, 350);
 
   input.addEventListener('input', e => debouncedSearch(e.target.value.trim()));
-
   input.addEventListener('keydown', e => {
     if (e.key === 'Escape') { input.value = ''; _search = ''; _loadNotes(); }
   });
@@ -78,7 +82,7 @@ async function _loadNotes() {
     _totalCount = typeof data.count === 'number' ? data.count : _allNotes.length;
 
     _render();
-    updateSidebarTags(_allNotes, _activeTag, _onTagClick);
+    updateEmotionTagTree(_allNotes, _activeTag, _onTagClick);
   } catch (err) {
     container.innerHTML = `
       <div class="alert alert-error">
@@ -90,6 +94,33 @@ async function _loadNotes() {
   }
 }
 
+// ─── Archive action ───────────────────────────────────────────────────────────
+
+async function _archiveNote(id) {
+  const container = document.getElementById('notes-container');
+  const cardEl    = container?.querySelector(`.note-card[data-id="${id}"]`);
+
+  try {
+    await api.archiveNote(id);
+    toast.success('Заметка перемещена в архив');
+
+    if (cardEl) {
+      cardEl.classList.add('note-card--archiving');
+      cardEl.addEventListener('animationend', () => {
+        _allNotes = _allNotes.filter(n => n.id !== id);
+        _render();
+        updateEmotionTagTree(_allNotes, _activeTag, _onTagClick);
+      }, { once: true });
+    } else {
+      _allNotes = _allNotes.filter(n => n.id !== id);
+      _render();
+      updateEmotionTagTree(_allNotes, _activeTag, _onTagClick);
+    }
+  } catch (err) {
+    toast.error('Не удалось архивировать: ' + err.message);
+  }
+}
+
 // ─── Render notes grid ────────────────────────────────────────────────────────
 
 function _render() {
@@ -98,11 +129,9 @@ function _render() {
   const countEl   = document.getElementById('notes-count');
   if (!container || !heading || !countEl) return;
 
-  const notes = _allNotes.filter(n => {
-    const tagOk     = !_activeTag     || (n.tags || []).includes(_activeTag);
-    const emotionOk = !_activeEmotion || (n.tags_with_emotions || []).some(t => t.emotion === _activeEmotion);
-    return tagOk && emotionOk;
-  });
+  const notes = _activeTag
+    ? _allNotes.filter(n => (n.tags || []).includes(_activeTag))
+    : _allNotes;
 
   if (_activeTag) {
     heading.textContent = `#${_activeTag}`;
@@ -148,24 +177,88 @@ function _render() {
   `;
 
   initTagGlow();
-  initEmotionFilter(_activeEmotion, _onEmotionClick);
 
   container.querySelectorAll('.note-card').forEach(card => {
     const open = () => router.navigate(`/notes/${card.dataset.id}`);
     card.addEventListener('click', open);
     card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
   });
+
+  container.querySelectorAll('.note-card-archive-btn').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); _archiveNote(btn.dataset.id); });
+  });
+
+  container.querySelectorAll('.note-card-edit-btn').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); router.navigate(`/notes/${btn.dataset.id}/edit`); });
+  });
+
+  const hasPending = _allNotes.some(n => n.ai_status === 'pending' || n.ai_status === 'processing');
+  if (hasPending) _startPolling();
+  else _stopPolling();
 }
 
-// ─── Tag / emotion click ──────────────────────────────────────────────────────
+// ─── AI status polling ────────────────────────────────────────────────────────
+
+function _startPolling() {
+  if (_pollInterval) return;
+  _pollInterval = setInterval(_pollPendingNotes, 3000);
+}
+
+function _stopPolling() {
+  clearInterval(_pollInterval);
+  _pollInterval = null;
+}
+
+async function _pollPendingNotes() {
+  if (!document.getElementById('notes-container')) {
+    _stopPolling();
+    return;
+  }
+  const pending = _allNotes.filter(n => n.ai_status === 'pending' || n.ai_status === 'processing');
+  if (!pending.length) { _stopPolling(); return; }
+
+  let changed = false;
+  await Promise.all(pending.map(async n => {
+    try {
+      const fresh = await api.getNote(n.id);
+      const idx = _allNotes.findIndex(x => x.id === fresh.id);
+      if (idx !== -1 && fresh.ai_status !== _allNotes[idx].ai_status) {
+        _allNotes[idx] = { ..._allNotes[idx], ...fresh };
+        changed = true;
+      }
+    } catch (_) {}
+  }));
+
+  if (changed) {
+    _render();
+    updateEmotionTagTree(_allNotes, _activeTag, _onTagClick);
+  }
+}
+
+// ─── Tag click ────────────────────────────────────────────────────────────────
 
 function _onTagClick(tag) {
   _activeTag = tag;
   _render();
-  updateSidebarTags(_allNotes, _activeTag, _onTagClick);
+  updateEmotionTagTree(_allNotes, _activeTag, _onTagClick);
 }
 
-function _onEmotionClick(emotion) {
-  _activeEmotion = emotion;
+// ─── Live WS update ──────────────────────────────────────────────────────────
+
+function _handleWSUpdate(msg) {
+  if (!document.getElementById('notes-container')) {
+    wsGlobal.offAnyUpdate(_handleWSUpdate);
+    return;
+  }
+  const idx = _allNotes.findIndex(n => n.id === msg.note_id);
+  if (idx === -1) return;
+  _allNotes[idx] = {
+    ..._allNotes[idx],
+    ai_status:         msg.ai_status,
+    summary:           msg.summary,
+    tags:              msg.tags,
+    tags_with_emotions: msg.tags_with_emotions,
+  };
   _render();
+  updateEmotionTagTree(_allNotes, _activeTag, _onTagClick);
 }

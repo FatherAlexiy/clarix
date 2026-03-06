@@ -30,6 +30,10 @@ export function escapeAttr(str) {
   return String(str ?? '').replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
 }
 
+export function sanitizeCssColor(str) {
+  return /^#[0-9A-Fa-f]{6}$/.test(str) ? str : '#888888';
+}
+
 export function truncate(str, len) {
   if (!str) return '';
   return str.length > len ? str.slice(0, len).trimEnd() + '…' : str;
@@ -42,7 +46,6 @@ export function mixWithWhite(hex, ratio) {
   return `rgb(${Math.round(r + (255 - r) * ratio)}, ${Math.round(g + (255 - g) * ratio)}, ${Math.round(b + (255 - b) * ratio)})`;
 }
 
-// 8 compass directions around the tag perimeter
 const _DIRS = [
   [0, -1], [0.7, -0.7], [1, 0], [0.7, 0.7],
   [0, 1],  [-0.7, 0.7], [-1, 0], [-0.7, -0.7],

@@ -37,6 +37,7 @@ def _notify_user(note):
             {
                 'type': 'note_updated',
                 'note_id': str(note.id),
+                'note_title': note.title,
                 'ai_status': note.ai_status,
                 'summary': note.summary,
                 'tags': note.tags,

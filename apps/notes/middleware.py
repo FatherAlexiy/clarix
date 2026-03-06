@@ -14,13 +14,21 @@ def _get_user(token_key: str):
         token = AccessToken(token_key)
         return User.objects.get(id=token['user_id'])
     except Exception:
-        return AnonymousUser()
+        return None  # None = токен был, но невалидный
 
 
 class JWTAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
         token = self._get_token(scope)
-        scope['user'] = await _get_user(token) if token else AnonymousUser()
+        if token:
+            user = await _get_user(token)
+            if user is None:
+                scope['user'] = AnonymousUser()
+                scope['auth_failed'] = True  # токен присутствовал, но невалидный
+            else:
+                scope['user'] = user
+        else:
+            scope['user'] = AnonymousUser()
         return await super().__call__(scope, receive, send)
 
     @staticmethod

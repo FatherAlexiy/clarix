@@ -109,10 +109,11 @@ class ApiClient {
     this.clearTokens();
   }
 
-  getNotes({ search = '', page = 1 } = {}) {
+  getNotes({ search = '', page = 1, archived = false } = {}) {
     const qs = new URLSearchParams();
     if (search) qs.set('search', search);
     if (page > 1) qs.set('page', String(page));
+    if (archived) qs.set('archived', 'true');
     const q = qs.toString();
     return this.get(`/api/notes/${q ? '?' + q : ''}`);
   }
@@ -122,6 +123,8 @@ class ApiClient {
   createNote(title, content)   { return this.post('/api/notes/', { title, content }); }
   updateNote(id, data)         { return this.patch(`/api/notes/${id}/`, data); }
   deleteNote(id)               { return this.del(`/api/notes/${id}/`); }
+  archiveNote(id)              { return this.post(`/api/notes/${id}/archive/`, {}); }
+  unarchiveNote(id)            { return this.post(`/api/notes/${id}/unarchive/`, {}); }
   generateSummary(id)          { return this.post(`/api/notes/${id}/generate_summary/`, {}); }
   shareNote(id)                { return this.patch(`/api/notes/${id}/`, { is_public: true }); }
   unshareNote(id)              { return this.patch(`/api/notes/${id}/`, { is_public: false }); }

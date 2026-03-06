@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { renderLoader } from '../components/loader.js';
 import { icon } from '../components/icons.js';
-import { formatDate, escapeHtml } from '../utils.js';
+import { formatDate, escapeHtml, escapeAttr, mixWithWhite, initTagGlow, sanitizeCssColor } from '../utils.js';
 
 export function renderPublicNotePage({ token }) {
   document.getElementById('app').innerHTML = `
@@ -24,6 +24,20 @@ export function renderPublicNotePage({ token }) {
   `;
 
   _loadNote(token);
+}
+
+function _renderTags(note) {
+  const withEmotions = note.tags_with_emotions || [];
+  const plain = note.tags || [];
+  if (withEmotions.length > 0) {
+    return withEmotions.map(item => {
+      const safeColor = sanitizeCssColor(item.color);
+      const textColor = mixWithWhite(safeColor, 0.7);
+      return `<span class="tag tag-glow" data-color="${escapeAttr(safeColor)}"
+        style="background-color:${safeColor}25;color:${textColor};border:1px solid ${safeColor}50">#${escapeHtml(item.tag)}</span>`;
+    }).join('');
+  }
+  return plain.map(t => `<span class="tag">#${escapeHtml(t)}</span>`).join('');
 }
 
 async function _loadNote(token) {
@@ -49,7 +63,7 @@ async function _loadNote(token) {
             ${note.summary ? `<p class="ai-block-summary">${escapeHtml(note.summary)}</p>` : ''}
             ${tags.length > 0 ? `
               <div class="ai-block-tags">
-                ${tags.map(t => `<span class="tag">#${escapeHtml(t)}</span>`).join('')}
+                ${_renderTags(note)}
               </div>
             ` : ''}
           </div>
@@ -61,6 +75,8 @@ async function _loadNote(token) {
         </div>
       </article>
     `;
+
+    initTagGlow();
   } catch (err) {
     container.innerHTML = err.status === 404
       ? `

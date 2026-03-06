@@ -128,7 +128,7 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
+# Static files
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -172,7 +172,6 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 GROQ_MODEL   = os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile')
 
 # ─── SimpleJWT ────────────────────────────────────────────────────────────────
-# SimpleJWT
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME':  timedelta(minutes=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
@@ -181,10 +180,9 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# httpOnly cookie settings (set secure=True in production with HTTPS)
 JWT_COOKIE = {
     'httponly': True,
-    'secure':   False,
+    'secure':   not DEBUG,
     'samesite': 'Lax',
     'path':     '/',
 }

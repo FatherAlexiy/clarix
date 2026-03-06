@@ -1,5 +1,6 @@
 import { router } from './router.js';
 import { auth } from './auth.js';
+import { wsGlobal } from './ws-global.js';
 import { renderLoginPage } from './pages/login.js';
 import { renderRegisterPage } from './pages/register.js';
 import { renderNotesPage } from './pages/notes.js';
@@ -7,6 +8,7 @@ import { renderNoteViewPage } from './pages/note-view.js';
 import { renderNoteCreatePage } from './pages/note-create.js';
 import { renderNoteEditPage } from './pages/note-edit.js';
 import { renderPublicNotePage } from './pages/public-note.js';
+import { renderArchivePage } from './pages/archive.js';
 
 document.getElementById('app').innerHTML = `
   <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;gap:.75rem;color:var(--text-muted);font-size:.875rem">
@@ -18,6 +20,8 @@ document.getElementById('app').innerHTML = `
 async function boot() {
   await auth.init();
 
+  if (auth.isAuthenticated()) wsGlobal.connect();
+
   router
     .add('/login', () => {
       auth.isAuthenticated() ? router.navigate('/notes') : renderLoginPage();
@@ -26,6 +30,7 @@ async function boot() {
       auth.isAuthenticated() ? router.navigate('/notes') : renderRegisterPage();
     })
     .add('/notes', renderNotesPage, { requiresAuth: true })
+    .add('/archive', renderArchivePage, { requiresAuth: true })
     .add('/notes/create', renderNoteCreatePage, { requiresAuth: true })
     .add('/notes/:id/edit', renderNoteEditPage, { requiresAuth: true })
     .add('/notes/:id', renderNoteViewPage, { requiresAuth: true })
@@ -35,8 +40,13 @@ async function boot() {
     });
 
   auth.subscribe(user => {
-    if (!user && !location.pathname.startsWith('/public')) {
-      router.navigate('/login');
+    if (user) {
+      wsGlobal.connect();
+    } else {
+      wsGlobal.disconnect();
+      if (!location.pathname.startsWith('/public')) {
+        router.navigate('/login');
+      }
     }
   });
 

@@ -1,5 +1,7 @@
 # Clarix
 
+[![CI](https://github.com/FatherAlexiy/clarix/actions/workflows/ci.yml/badge.svg)](https://github.com/FatherAlexiy/clarix/actions/workflows/ci.yml)
+
 Clarix - умный блокнот с ИИ-обработкой заметок: автоматически генерирует саммари, теги с эмоциональной окраской и векторные эмбеддинги для семантического поиска. Работает на Django + Channels (WebSocket) + Celery + Groq LLM.
 
 ---

@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import viewsets, permissions, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -26,15 +27,23 @@ class NoteViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
-        return Note.objects.filter(user=self.request.user)
+        qs = Note.objects.filter(user=self.request.user).select_related('user')
+        if self.action == 'list':
+            archived = self.request.query_params.get('archived', 'false').lower()
+            if archived == 'true':
+                return qs.filter(is_archived=True)
+            return qs.filter(is_archived=False)
+        return qs
 
     def filter_queryset(self, queryset):
         qs = super().filter_queryset(queryset)
         search = self.request.query_params.get('search', '').strip()
         if search:
+            archived = self.request.query_params.get('archived', 'false').lower() == 'true'
             tag_qs = (
                 Note.objects
-                .filter(user=self.request.user)
+                .filter(user=self.request.user, is_archived=archived)
+                .select_related('user')
                 .annotate(_tags_str=_ArrayToString('tags', Value(',')))
                 .filter(_tags_str__icontains=search)
             )
@@ -56,6 +65,27 @@ class NoteViewSet(viewsets.ModelViewSet):
             generate_summary.delay(str(note.id))
             generate_tags.delay(str(note.id))
             generate_embedding.delay(str(note.id))
+
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+    # POST /api/notes/{id}/archive/
+    @action(detail=True, methods=['post'], url_path='archive')
+    def archive(self, request, pk=None):
+        note = self.get_object()
+        note.is_archived = True
+        note.archived_at = timezone.now()
+        note.save(update_fields=['is_archived', 'archived_at'])
+        return Response(self.get_serializer(note).data)
+
+    # POST /api/notes/{id}/unarchive/
+    @action(detail=True, methods=['post'], url_path='unarchive')
+    def unarchive(self, request, pk=None):
+        note = self.get_object()
+        note.is_archived = False
+        note.archived_at = None
+        note.save(update_fields=['is_archived', 'archived_at'])
+        return Response(self.get_serializer(note).data)
 
     # POST /api/notes/{id}/generate_summary/
     @action(detail=True, methods=['post'], url_path='generate_summary')
@@ -83,7 +113,8 @@ class NoteViewSet(viewsets.ModelViewSet):
         query_vector = get_embedding(q)
         notes = (
             Note.objects
-            .filter(user=request.user, embedding__isnull=False)
+            .filter(user=request.user, embedding__isnull=False, is_archived=False)
+            .select_related('user')
             .order_by(L2Distance('embedding', query_vector))[:10]
         )
         return Response(self.get_serializer(notes, many=True).data)

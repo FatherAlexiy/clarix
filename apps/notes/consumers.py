@@ -10,8 +10,8 @@ class NoteConsumer(AsyncWebsocketConsumer):
         try:
             user = self.scope.get('user')
             if user is None or not user.is_authenticated:
-                logger.warning('WS rejected: unauthenticated')
-                await self.close()
+                logger.warning('WS rejected: unauthenticated (auth_failed=%s)', self.scope.get('auth_failed', False))
+                await self.close(code=4001)
                 return
             self.group_name = f'user_{user.id}'
             await self.channel_layer.group_add(self.group_name, self.channel_name)
@@ -29,6 +29,7 @@ class NoteConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type': 'note_updated',
             'note_id': event['note_id'],
+            'note_title': event.get('note_title', ''),
             'ai_status': event['ai_status'],
             'summary': event['summary'],
             'tags': event['tags'],
